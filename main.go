@@ -13,7 +13,8 @@ func main() {
 		// log.Println("hello world")/
 		d, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			rw.WriteHeader(http.StatusBadRequest)
+			http.Error(rw, "Oops", http.StatusBadRequest)
+			return
 		}
 		fmt.Fprintf(rw, "Hello %s \n", d)
 	})
