@@ -1,3 +1,17 @@
+// Package classification Product API
+//
+// Documentation for Product API
+//
+// Schemes: http
+// BasePath: /
+// Version: 1.0.0
+//
+// Consumes:
+// - application/json
+//
+// Produces:
+// - application/json
+// swagger:meta
 package handlers
 
 import (
@@ -21,7 +35,13 @@ func NewProduct(l *log.Logger) *Product {
 	return &Product{l}
 }
 
-func (p *Product) GetProductData(rw http.ResponseWriter, r *http.Request) {
+// swagger:route GET /products products listProducts
+// Returns a list of products
+// Responses:
+// 	200: productResponse
+
+// GetProducts returns the list of all products
+func (p *Product) GetProducts(rw http.ResponseWriter, r *http.Request) {
 	lp := data.GetProductData()
 	err := lp.ToJSON(rw)
 
@@ -31,12 +51,25 @@ func (p *Product) GetProductData(rw http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (p *Product) AddProductData(rw http.ResponseWriter, r *http.Request) {
+// swagger:route POST /products products registerProduct
+// Adds a product to the Database
+// Responses:
+// 	201: noContent
+
+// AddProduct add a Product to Products list
+func (p *Product) AddProduct(rw http.ResponseWriter, r *http.Request) {
 	prod := r.Context().Value(KeyProduct{}).(*data.Product)
 	data.AddToList(prod)
-	return
+
 }
 
+// swagger:route PUT /products/{id} products updateProduct
+// updates an existing product
+// Responses:
+// 	200: productResponse
+//	500: InternalServerError
+
+// GetProducts returns the list of all products
 func (p *Product) UpdateProduct(rw http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	prod := r.Context().Value(KeyProduct{}).(*data.Product)
@@ -47,9 +80,29 @@ func (p *Product) UpdateProduct(rw http.ResponseWriter, r *http.Request) {
 		http.Error(rw, "Unable to update Product", http.StatusInternalServerError)
 		return
 	}
-	return
+	rw.WriteHeader(201)
+
 }
 
+// swagger:route DELETE /products/{id} products removeProducts
+// Removes an existing product from the DB
+// Responses:
+// 	201: noContent
+//	500: InternalServerError
+
+// DeleteProduct deletes a product from productList
+func (p *Product) DeleteProduct(rw http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id, _ := strconv.Atoi(vars["id"])
+	err := data.DeleteProduct(id)
+	if err != nil {
+		p.l.Printf("Error:%v", err)
+		http.Error(rw, "Unable to delete Product", http.StatusInternalServerError)
+		return
+	}
+}
+
+// MiddlewareProductValidation decodes JSON
 func (p Product) MiddlewareProductValidation(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		prod := &data.Product{}

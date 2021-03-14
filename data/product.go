@@ -54,6 +54,16 @@ func UpdateProduct(id int, p *Product) error {
 	return nil
 }
 
+func DeleteProduct(id int) error {
+	pos, err := getPos(id)
+	if err != nil {
+		return ErrorProductNotFound
+	}
+	productList[pos] = productList[len(productList)-1]
+	productList = productList[:len(productList)-1]
+	return nil
+}
+
 func getPos(id int) (int, error) {
 	for i, prod := range productList {
 		if prod.ID == id {
