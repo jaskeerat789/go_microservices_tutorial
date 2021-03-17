@@ -12,18 +12,32 @@ import (
 	"github.com/go-openapi/runtime/middleware"
 	goHandlers "github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
+	"github.com/jaskeerat789/gRPC-tutorial/protos/currency"
+	"google.golang.org/grpc"
 )
 
 func main() {
 
+	// initialize logger
 	l := log.New(os.Stdout, "product-api", log.LstdFlags)
 
-	ph := handlers.NewProduct(l)
+	conn, err := grpc.Dial("localhost:8082", grpc.WithInsecure())
+	if err != nil {
+		panic(err)
+	}
+	defer conn.Close()
 
+	// create new Currency Clients
+	cc := currency.NewCurrencyClient(conn)
+
+	// create handlers
+	ph := handlers.NewProduct(l, cc)
+	// create a new server mux and register the handlers
 	sm := mux.NewRouter()
 
 	getRouter := sm.Methods("GET").Subrouter()
 	getRouter.HandleFunc("/", ph.GetProducts)
+	getRouter.HandleFunc("/{id:[0-9]+}", ph.GetProductById)
 
 	putRouter := sm.Methods("PUT").Subrouter()
 	putRouter.HandleFunc("/{id:[0-9]+}", ph.UpdateProduct)

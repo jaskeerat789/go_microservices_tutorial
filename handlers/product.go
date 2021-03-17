@@ -23,16 +23,18 @@ import (
 	"strconv"
 
 	"github.com/gorilla/mux"
+	"github.com/jaskeerat789/gRPC-tutorial/protos/currency"
 )
 
 type Product struct {
-	l *log.Logger
+	l  *log.Logger
+	cc currency.CurrencyClient
 }
 
 type KeyProduct struct{}
 
-func NewProduct(l *log.Logger) *Product {
-	return &Product{l}
+func NewProduct(l *log.Logger, cc currency.CurrencyClient) *Product {
+	return &Product{l, cc}
 }
 
 // swagger:route GET /products products listProducts
@@ -47,6 +49,41 @@ func (p *Product) GetProducts(rw http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		http.Error(rw, "Unable to read json", http.StatusInternalServerError)
+		return
+	}
+}
+
+func (p *Product) GetProductById(rw http.ResponseWriter, r *http.Request) {
+	rw.Header().Add("Content-Type", "application/json")
+
+	id, err := getProductId(r)
+	if err != nil {
+		http.Error(rw, "Id cannot be retrieved", http.StatusBadRequest)
+		return
+	}
+	prod, err := data.GetProductById(id)
+	if err != nil {
+		http.Error(rw, fmt.Sprintf("Product with id as %v cannot be retrieved", id), http.StatusBadRequest)
+		return
+	}
+
+	rr := &currency.RateRequest{
+		Base:        currency.Currencies_name[currency.Currencies_value["EUR"]],
+		Destination: currency.Currencies_name[currency.Currencies_value["GBP"]],
+	}
+	resp, err := p.cc.GetRate(context.Background(), rr)
+
+	if err != nil {
+		p.l.Println("Error", err)
+		http.Error(rw, "Currency conversion", http.StatusInternalServerError)
+		return
+	}
+
+	prod.Price = prod.Price * resp.Rate
+
+	err = prod.ToJSON(rw)
+	if err != nil {
+		http.Error(rw, "Unable to serialize the data", http.StatusInternalServerError)
 		return
 	}
 }
@@ -100,6 +137,12 @@ func (p *Product) DeleteProduct(rw http.ResponseWriter, r *http.Request) {
 		http.Error(rw, "Unable to delete Product", http.StatusInternalServerError)
 		return
 	}
+}
+
+func getProductId(r *http.Request) (int, error) {
+	vars := mux.Vars(r)
+	id, error := strconv.Atoi(vars["id"])
+	return id, error
 }
 
 // MiddlewareProductValidation decodes JSON

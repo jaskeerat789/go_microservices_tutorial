@@ -27,7 +27,20 @@ func GetProductData() Products {
 	return productList
 }
 
+func GetProductById(id int) (*Product, error) {
+	pos, err := getPos(id)
+	if err != nil {
+		return &Product{}, fmt.Errorf("Product with id as %v not found", id)
+	}
+	return productList[pos], nil
+}
+
 func (p *Products) ToJSON(w io.Writer) error {
+	e := json.NewEncoder(w)
+	return e.Encode(p)
+}
+
+func (p *Product) ToJSON(w io.Writer) error {
 	e := json.NewEncoder(w)
 	return e.Encode(p)
 }
