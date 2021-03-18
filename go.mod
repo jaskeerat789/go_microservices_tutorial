@@ -9,6 +9,7 @@ require (
 	github.com/google/uuid v1.1.2 // indirect
 	github.com/gorilla/handlers v1.5.1
 	github.com/gorilla/mux v1.8.0
+	github.com/hashicorp/go-hclog v0.15.0
 	github.com/jaskeerat789/gRPC-tutorial v0.0.0-00010101000000-000000000000
 	golang.org/x/sys v0.0.0-20200331124033-c3d80250170d // indirect
 	google.golang.org/grpc v1.36.0

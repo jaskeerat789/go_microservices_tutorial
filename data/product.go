@@ -1,6 +1,7 @@
 package data
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -8,13 +9,15 @@ import (
 	"time"
 
 	"github.com/go-playground/validator/v10"
+	"github.com/hashicorp/go-hclog"
+	"github.com/jaskeerat789/gRPC-tutorial/protos/currency"
 )
 
 type Product struct {
 	ID          int     `json:"id"`
 	Name        string  `json:"name" validate:"required"`
 	Description string  `json:"description"`
-	Price       float32 `json:"price" validate:"gt=0"`
+	Price       float64 `json:"price" validate:"gt=0"`
 	SKU         string  `json:"sku" validate:"required,sku"`
 	CreatedAt   string  `json:"-"`
 	UpdatedAt   string  `json:"-"`
@@ -23,16 +26,55 @@ type Product struct {
 
 type Products []*Product
 
-func GetProductData() Products {
-	return productList
+type ProductsDB struct {
+	Currency currency.CurrencyClient
+	Log      hclog.Logger
 }
 
-func GetProductById(id int) (*Product, error) {
+func NewProductDB(c currency.CurrencyClient, l hclog.Logger) *ProductsDB {
+	return &ProductsDB{c, l}
+}
+
+func (p *ProductsDB) GetProductData(Currency string) (Products, error) {
+	if Currency == "" {
+		return productList, nil
+	}
+
+	rate, err := p.getRate(Currency)
+	if err != nil {
+		p.Log.Log(hclog.NoLevel, "Error", err)
+		return nil, err
+	}
+
+	pr := Products{}
+	for _, product := range productList {
+		np := *product
+		np.Price = np.Price * rate
+		pr = append(pr, &np)
+	}
+	return pr, nil
+}
+
+func (p *ProductsDB) GetProductById(id int, Currency string) (*Product, error) {
 	pos, err := getPos(id)
 	if err != nil {
 		return &Product{}, fmt.Errorf("Product with id as %v not found", id)
 	}
-	return productList[pos], nil
+
+	if Currency == "" {
+		return productList[pos], nil
+	}
+
+	rate, err := p.getRate(Currency)
+	if err != nil {
+		p.Log.Log(hclog.NoLevel, "Error", err)
+		return nil, err
+	}
+
+	pr := *productList[pos]
+	pr.Price = pr.Price * rate
+	return &pr, nil
+
 }
 
 func (p *Products) ToJSON(w io.Writer) error {
@@ -104,6 +146,15 @@ func validateSKU(fl validator.FieldLevel) bool {
 		return false
 	}
 	return true
+}
+
+func (p *ProductsDB) getRate(destination string) (float64, error) {
+	rr := &currency.RateRequest{
+		Base:        currency.Currencies_name[currency.Currencies_value["EUR"]],
+		Destination: currency.Currencies_name[currency.Currencies_value[destination]],
+	}
+	resp, err := p.Currency.GetRate(context.Background(), rr)
+	return resp.Rate, err
 }
 
 var productList = []*Product{
