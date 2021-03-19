@@ -13,15 +13,41 @@ import (
 	"github.com/jaskeerat789/gRPC-tutorial/protos/currency"
 )
 
+// Product defines the structure for an API product
+// swagger:model
 type Product struct {
-	ID          int     `json:"id"`
-	Name        string  `json:"name" validate:"required"`
-	Description string  `json:"description"`
-	Price       float64 `json:"price" validate:"gt=0"`
-	SKU         string  `json:"sku" validate:"required,sku"`
-	CreatedAt   string  `json:"-"`
-	UpdatedAt   string  `json:"-"`
-	DeletedAt   string  `json:"-"`
+	// the id for the product
+	//
+	// required: false
+	// min: 1
+	ID int `json:"id"` // Unique identifier for the product
+
+	// the name for this poduct
+	//
+	// required: true
+	// max length: 255
+	Name string `json:"name" validate:"required"`
+
+	// the description for this poduct
+	//
+	// required: false
+	// max length: 10000
+	Description string `json:"description"`
+
+	// the price for the product
+	//
+	// required: true
+	// min: 0.01
+	Price float64 `json:"price" validate:"required,gt=0"`
+
+	// the SKU for the product
+	//
+	// required: true
+	// pattern: [a-z]+-[a-z]+-[a-z]+
+	SKU       string `json:"sku" validate:"sku"`
+	CreatedAt string `json:"createdAt"`
+	UpdatedAt string `json:"updatedAt"`
+	DeletedAt string `json:"deletedAt"`
 }
 
 type Products []*Product
@@ -35,14 +61,14 @@ func NewProductDB(c currency.CurrencyClient, l hclog.Logger) *ProductsDB {
 	return &ProductsDB{c, l}
 }
 
-func (p *ProductsDB) GetProductData(Currency string) (Products, error) {
+func (pdb *ProductsDB) GetProductData(Currency string) (Products, error) {
 	if Currency == "" {
 		return productList, nil
 	}
 
-	rate, err := p.getRate(Currency)
+	rate, err := pdb.getRate(Currency)
 	if err != nil {
-		p.Log.Log(hclog.NoLevel, "Error", err)
+		pdb.Log.Error("Error: %v", err)
 		return nil, err
 	}
 
@@ -55,7 +81,7 @@ func (p *ProductsDB) GetProductData(Currency string) (Products, error) {
 	return pr, nil
 }
 
-func (p *ProductsDB) GetProductById(id int, Currency string) (*Product, error) {
+func (pdb *ProductsDB) GetProductById(id int, Currency string) (*Product, error) {
 	pos, err := getPos(id)
 	if err != nil {
 		return &Product{}, fmt.Errorf("Product with id as %v not found", id)
@@ -65,9 +91,9 @@ func (p *ProductsDB) GetProductById(id int, Currency string) (*Product, error) {
 		return productList[pos], nil
 	}
 
-	rate, err := p.getRate(Currency)
+	rate, err := pdb.getRate(Currency)
 	if err != nil {
-		p.Log.Log(hclog.NoLevel, "Error", err)
+		pdb.Log.Error("Error: %v", err)
 		return nil, err
 	}
 
@@ -75,6 +101,31 @@ func (p *ProductsDB) GetProductById(id int, Currency string) (*Product, error) {
 	pr.Price = pr.Price * rate
 	return &pr, nil
 
+}
+
+func (pdb *ProductsDB) AddToList(p *Product) {
+	p.ID = getId()
+	productList = append(productList, p)
+}
+
+func (pdb *ProductsDB) UpdateProduct(id int, p *Product) error {
+	pos, err := getPos(id)
+	if err != nil {
+		return err
+	}
+	p.ID = id
+	productList[pos] = p
+	return nil
+}
+
+func (pdb *ProductsDB) DeleteProduct(id int) error {
+	pos, err := getPos(id)
+	if err != nil {
+		return ErrorProductNotFound
+	}
+	productList[pos] = productList[len(productList)-1]
+	productList = productList[:len(productList)-1]
+	return nil
 }
 
 func (p *Products) ToJSON(w io.Writer) error {
@@ -92,32 +143,7 @@ func (p *Product) FromJSON(r io.Reader) error {
 	return d.Decode(p)
 }
 
-func AddToList(p *Product) {
-	p.ID = getId()
-	productList = append(productList, p)
-}
-
 var ErrorProductNotFound = fmt.Errorf("Product not found")
-
-func UpdateProduct(id int, p *Product) error {
-	pos, err := getPos(id)
-	if err != nil {
-		return err
-	}
-	p.ID = id
-	productList[pos] = p
-	return nil
-}
-
-func DeleteProduct(id int) error {
-	pos, err := getPos(id)
-	if err != nil {
-		return ErrorProductNotFound
-	}
-	productList[pos] = productList[len(productList)-1]
-	productList = productList[:len(productList)-1]
-	return nil
-}
 
 func getPos(id int) (int, error) {
 	for i, prod := range productList {
@@ -142,10 +168,7 @@ func (p *Product) Validate() error {
 func validateSKU(fl validator.FieldLevel) bool {
 	re := regexp.MustCompile(`[a-z]+-[a-z]+-[a-z]+`)
 	matches := re.FindAllString(fl.Field().String(), -1)
-	if len(matches) != 1 {
-		return false
-	}
-	return true
+	return len(matches) == 1
 }
 
 func (p *ProductsDB) getRate(destination string) (float64, error) {

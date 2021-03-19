@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"microservice_tutorial/data"
 	"microservice_tutorial/handlers"
 	"net/http"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"github.com/go-openapi/runtime/middleware"
 	goHandlers "github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
+	"github.com/hashicorp/go-hclog"
 	"github.com/jaskeerat789/gRPC-tutorial/protos/currency"
 	"google.golang.org/grpc"
 )
@@ -19,7 +21,7 @@ import (
 func main() {
 
 	// initialize logger
-	l := log.New(os.Stdout, "product-api", log.LstdFlags)
+	l := hclog.Default()
 
 	conn, err := grpc.Dial("localhost:8082", grpc.WithInsecure())
 	if err != nil {
@@ -29,26 +31,28 @@ func main() {
 
 	// create new Currency Clients
 	cc := currency.NewCurrencyClient(conn)
-
+	pdb := data.NewProductDB(cc, l)
 	// create handlers
-	ph := handlers.NewProduct(l, cc)
+	ph := handlers.NewProduct(pdb, l)
 	// create a new server mux and register the handlers
 	sm := mux.NewRouter()
 
 	getRouter := sm.Methods("GET").Subrouter()
-	getRouter.HandleFunc("/", ph.GetProducts)
-	getRouter.HandleFunc("/{id:[0-9]+}", ph.GetProductById)
+	getRouter.HandleFunc("/products/", ph.GetProducts).Queries("currency", "{[A-Z]{3}}")
+	getRouter.HandleFunc("/products/", ph.GetProducts)
+	getRouter.HandleFunc("/products/{id:[0-9]+}", ph.GetProductById).Queries("currency", "{[A-Z]{3}}")
+	getRouter.HandleFunc("/products/{id:[0-9]+}", ph.GetProductById)
 
 	putRouter := sm.Methods("PUT").Subrouter()
-	putRouter.HandleFunc("/{id:[0-9]+}", ph.UpdateProduct)
+	putRouter.HandleFunc("/products/{id:[0-9]+}", ph.UpdateProduct)
 	putRouter.Use(ph.MiddlewareProductValidation)
 
 	postRouter := sm.Methods("POST").Subrouter()
-	postRouter.HandleFunc("/", ph.AddProduct)
+	postRouter.HandleFunc("/products/", ph.AddProduct)
 	postRouter.Use(ph.MiddlewareProductValidation)
 
 	deleteRouter := sm.Methods("DELETE").Subrouter()
-	deleteRouter.HandleFunc("/{id:[0-9]+}", ph.DeleteProduct)
+	deleteRouter.HandleFunc("/products/{id:[0-9]+}", ph.DeleteProduct)
 
 	ops := middleware.RedocOpts{SpecURL: "/swagger.yaml"}
 	dh := middleware.Redoc(ops, nil)
@@ -60,11 +64,13 @@ func main() {
 	s := &http.Server{
 		Addr:         ":8080",
 		Handler:      sm,
+		ErrorLog:     l.StandardLogger(&hclog.StandardLoggerOptions{}),
 		IdleTimeout:  120 * time.Second,
 		ReadTimeout:  1 * time.Second,
 		WriteTimeout: 1 * time.Second,
 	}
 	go func() {
+		l.Info("Starting server on Port 8080")
 		err := s.ListenAndServe()
 		if err != nil {
 			log.Fatal(err)
@@ -76,7 +82,7 @@ func main() {
 	signal.Notify(sigChan, os.Kill)
 
 	sig := <-sigChan
-	l.Println("Received terminate, graceful shutdown", sig)
+	l.Info("Received terminate, graceful shutdown", sig)
 
 	tc, _ := context.WithTimeout(context.Background(), 30*time.Second)
 	s.Shutdown(tc)

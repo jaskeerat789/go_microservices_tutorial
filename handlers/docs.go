@@ -10,6 +10,13 @@ type productResponseWrapper struct {
 	Body []data.Product
 }
 
+// swagger:response singleProductResponse
+type singleProductResponseWrapper struct {
+	// A product in the system
+	// in: body
+	Body data.Product
+}
+
 // swagger:parameters removeProducts updateProduct
 type productIDParameterWrapper struct {
 	// The id of the product to be removed from the database
@@ -39,4 +46,13 @@ type errorResponse struct {
 	// Error message
 	// in: body
 	Message string `json:"message"`
+}
+
+// swagger:parameters listProducts listSingleProducts
+type productQueryParam struct {
+	// Currency use when returning the price of the product,
+	// when not specified currency is returned in GBP.
+	// in: query
+	// required: false
+	Currency string
 }

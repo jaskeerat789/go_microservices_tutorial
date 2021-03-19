@@ -17,24 +17,24 @@ package handlers
 import (
 	"context"
 	"fmt"
-	"log"
 	"microservice_tutorial/data"
 	"net/http"
 	"strconv"
 
 	"github.com/gorilla/mux"
+	"github.com/hashicorp/go-hclog"
 	"github.com/jaskeerat789/gRPC-tutorial/protos/currency"
 )
 
 type Product struct {
-	l  *log.Logger
-	cc currency.CurrencyClient
+	l          hclog.Logger
+	productsDB *data.ProductsDB
 }
 
 type KeyProduct struct{}
 
-func NewProduct(l *log.Logger, cc currency.CurrencyClient) *Product {
-	return &Product{l, cc}
+func NewProduct(pdb *data.ProductsDB, l hclog.Logger) *Product {
+	return &Product{l, pdb}
 }
 
 // swagger:route GET /products products listProducts
@@ -44,25 +44,44 @@ func NewProduct(l *log.Logger, cc currency.CurrencyClient) *Product {
 
 // GetProducts returns the list of all products
 func (p *Product) GetProducts(rw http.ResponseWriter, r *http.Request) {
-	lp := data.GetProductData()
-	err := lp.ToJSON(rw)
+	p.l.Debug("Get all products")
+	rw.Header().Add("Content-Type", "application/json")
+	cur := r.URL.Query().Get("currency")
+
+	lp, err := p.productsDB.GetProductData(cur)
+	if err != nil {
+		p.l.Error("Error:%v", err)
+		http.Error(rw, "Unable to update Product", http.StatusInternalServerError)
+		return
+	}
+
+	err = lp.ToJSON(rw)
 
 	if err != nil {
-		http.Error(rw, "Unable to read json", http.StatusInternalServerError)
+		p.l.Error("Failed to serialize products:%v", err)
+		http.Error(rw, "Failed to serialize products", http.StatusInternalServerError)
 		return
 	}
 }
 
+// swagger:route GET /products/{id} products listSingleProducts
+// Returns a products
+// Responses:
+// 	200: singleProductResponse
 func (p *Product) GetProductById(rw http.ResponseWriter, r *http.Request) {
+	p.l.Debug("Get a product with id")
 	rw.Header().Add("Content-Type", "application/json")
+	cur := r.URL.Query().Get("currency")
 
 	id, err := getProductId(r)
 	if err != nil {
+		p.l.Error("Id can not be retrieved: %v", err)
 		http.Error(rw, "Id cannot be retrieved", http.StatusBadRequest)
 		return
 	}
-	prod, err := data.GetProductById(id)
+	prod, err := p.productsDB.GetProductById(id, cur)
 	if err != nil {
+		p.l.Error("Product with id %v Does not exists: %v", id, err)
 		http.Error(rw, fmt.Sprintf("Product with id as %v cannot be retrieved", id), http.StatusBadRequest)
 		return
 	}
@@ -71,10 +90,10 @@ func (p *Product) GetProductById(rw http.ResponseWriter, r *http.Request) {
 		Base:        currency.Currencies_name[currency.Currencies_value["EUR"]],
 		Destination: currency.Currencies_name[currency.Currencies_value["GBP"]],
 	}
-	resp, err := p.cc.GetRate(context.Background(), rr)
+	resp, err := p.productsDB.Currency.GetRate(context.Background(), rr)
 
 	if err != nil {
-		p.l.Println("Error", err)
+		p.l.Error("Failed to convert the currency", err)
 		http.Error(rw, "Currency conversion", http.StatusInternalServerError)
 		return
 	}
@@ -83,6 +102,7 @@ func (p *Product) GetProductById(rw http.ResponseWriter, r *http.Request) {
 
 	err = prod.ToJSON(rw)
 	if err != nil {
+		p.l.Error("Failed to serialize products:%v", err)
 		http.Error(rw, "Unable to serialize the data", http.StatusInternalServerError)
 		return
 	}
@@ -95,8 +115,10 @@ func (p *Product) GetProductById(rw http.ResponseWriter, r *http.Request) {
 
 // AddProduct add a Product to Products list
 func (p *Product) AddProduct(rw http.ResponseWriter, r *http.Request) {
+	p.l.Debug("Add a product with id")
+
 	prod := r.Context().Value(KeyProduct{}).(*data.Product)
-	data.AddToList(prod)
+	p.productsDB.AddToList(prod)
 
 }
 
@@ -111,9 +133,9 @@ func (p *Product) UpdateProduct(rw http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	prod := r.Context().Value(KeyProduct{}).(*data.Product)
 	id, _ := strconv.Atoi(vars["id"])
-	err := data.UpdateProduct(id, prod)
+	err := p.productsDB.UpdateProduct(id, prod)
 	if err != nil {
-		p.l.Printf("Error:%v", err)
+		p.l.Error("Error:%v", err)
 		http.Error(rw, "Unable to update Product", http.StatusInternalServerError)
 		return
 	}
@@ -131,9 +153,9 @@ func (p *Product) UpdateProduct(rw http.ResponseWriter, r *http.Request) {
 func (p *Product) DeleteProduct(rw http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id, _ := strconv.Atoi(vars["id"])
-	err := data.DeleteProduct(id)
+	err := p.productsDB.DeleteProduct(id)
 	if err != nil {
-		p.l.Printf("Error:%v", err)
+		p.l.Error("Error:%v", err)
 		http.Error(rw, "Unable to delete Product", http.StatusInternalServerError)
 		return
 	}
@@ -152,14 +174,14 @@ func (p Product) MiddlewareProductValidation(next http.Handler) http.Handler {
 
 		err := prod.FromJSON(r.Body)
 		if err != nil {
-			p.l.Printf("Decodeing JSON error %v", err)
+			p.l.Error("Decodeing JSON error %v", err)
 			http.Error(rw, "Unable to decode JSON", http.StatusBadRequest)
 			return
 		}
 
 		err = prod.Validate()
 		if err != nil {
-			p.l.Printf("Validation error %v", err)
+			p.l.Error("Validation error %v", err)
 			http.Error(rw, fmt.Sprintf("Wrong data passed: %s", err), http.StatusBadRequest)
 			return
 		}
