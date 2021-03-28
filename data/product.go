@@ -11,6 +11,8 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/hashicorp/go-hclog"
 	"github.com/jaskeerat789/gRPC-tutorial/protos/currency"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Product defines the structure for an API product
@@ -186,6 +188,17 @@ func (p *ProductsDB) getRate(destination string) (float64, error) {
 		Destination: currency.Currencies(currency.Currencies_value[destination]),
 	}
 	resp, err := p.Currency.GetRate(context.Background(), rr)
+	if err != nil {
+		if s, ok := status.FromError(err); ok {
+			md := s.Details()[0].(*currency.RateRequest)
+			if s.Code() == codes.InvalidArgument {
+				return -1, fmt.Errorf("unable to get rate from currency server, destination and base currency can not be same, base: %s, destination: %s", md.Base.String(), md.Destination.String())
+
+			}
+			return -1, fmt.Errorf("unable to get rate from currency server, base: %s, destination: %s", md.Base.String(), md.Destination.String())
+		}
+
+	}
 
 	p.client.Send(rr)
 	p.rates[destination] = resp.Rate

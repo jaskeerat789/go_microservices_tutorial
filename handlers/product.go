@@ -51,7 +51,7 @@ func (p *Product) GetProducts(rw http.ResponseWriter, r *http.Request) {
 	lp, err := p.productsDB.GetProductData(cur)
 	if err != nil {
 		p.l.Error("Error:%v", err)
-		http.Error(rw, "Unable to update Product", http.StatusInternalServerError)
+		http.Error(rw, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -82,7 +82,7 @@ func (p *Product) GetProductById(rw http.ResponseWriter, r *http.Request) {
 	prod, err := p.productsDB.GetProductById(id, cur)
 	if err != nil {
 		p.l.Error("Product with id %v Does not exists: %v", id, err)
-		http.Error(rw, fmt.Sprintf("Product with id as %v cannot be retrieved", id), http.StatusBadRequest)
+		http.Error(rw, fmt.Sprintf("Product with id as %v cannot be retrieved, %s", id, err.Error()), http.StatusBadRequest)
 		return
 	}
 
