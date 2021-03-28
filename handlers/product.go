@@ -87,8 +87,8 @@ func (p *Product) GetProductById(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	rr := &currency.RateRequest{
-		Base:        currency.Currencies_name[currency.Currencies_value["EUR"]],
-		Destination: currency.Currencies_name[currency.Currencies_value["GBP"]],
+		Base:        currency.Currencies(currency.Currencies_EUR),
+		Destination: currency.Currencies(currency.Currencies_value["GBP"]),
 	}
 	resp, err := p.productsDB.Currency.GetRate(context.Background(), rr)
 

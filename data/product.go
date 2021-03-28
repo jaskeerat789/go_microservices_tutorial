@@ -55,10 +55,14 @@ type Products []*Product
 type ProductsDB struct {
 	Currency currency.CurrencyClient
 	Log      hclog.Logger
+	rates    map[string]float64
+	client   currency.Currency_SubscribeRatesClient
 }
 
 func NewProductDB(c currency.CurrencyClient, l hclog.Logger) *ProductsDB {
-	return &ProductsDB{c, l}
+	pd := &ProductsDB{c, l, make(map[string]float64), nil}
+	go pd.handleUpdates()
+	return pd
 }
 
 func (pdb *ProductsDB) GetProductData(Currency string) (Products, error) {
@@ -172,12 +176,42 @@ func validateSKU(fl validator.FieldLevel) bool {
 }
 
 func (p *ProductsDB) getRate(destination string) (float64, error) {
+
+	if r, ok := p.rates[destination]; ok {
+		return r, nil
+	}
+
 	rr := &currency.RateRequest{
-		Base:        currency.Currencies_name[currency.Currencies_value["EUR"]],
-		Destination: currency.Currencies_name[currency.Currencies_value[destination]],
+		Base:        currency.Currencies(currency.Currencies_EUR),
+		Destination: currency.Currencies(currency.Currencies_value[destination]),
 	}
 	resp, err := p.Currency.GetRate(context.Background(), rr)
+
+	p.client.Send(rr)
+	p.rates[destination] = resp.Rate
+
 	return resp.Rate, err
+}
+
+func (p *ProductsDB) handleUpdates() {
+	sub, err := p.Currency.SubscribeRates(context.Background())
+	if err != nil {
+		p.Log.Error("Unable to subscribe for rates", "error", err)
+		return
+	}
+
+	p.client = sub
+
+	for {
+		rr, err := sub.Recv()
+		p.Log.Info("Received updated rate from server", "dest", rr.GetDestination().String())
+		if err != nil {
+			p.Log.Error("Error receiving message", "error", err)
+			return
+		}
+		p.rates[rr.Destination.String()] = rr.Rate
+	}
+
 }
 
 var productList = []*Product{
